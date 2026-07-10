@@ -2812,7 +2812,12 @@ impl App {
             },
         );
 
-        let mut config_lines = provider.config.keys().cloned().collect::<Vec<_>>();
+        let mut config_lines = provider
+            .config
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<String>>();
+
         config_lines.sort();
         if config_lines.is_empty() {
             config_lines.push("<none>".to_string());
