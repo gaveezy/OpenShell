@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#![warn(missing_debug_implementations)]
-
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -2379,6 +2377,15 @@ impl App {
                                     form.config_cursor.min(form.config.len().saturating_sub(1));
                             }
                         }
+                        KeyCode::Up => {
+                            form.config_cursor = form.config_cursor.saturating_sub(1);
+                        }
+                        KeyCode::Down => {
+                            if !form.config.is_empty() {
+                                form.config_cursor =
+                                    (form.config_cursor + 1).min(form.config.len() - 1);
+                            }
+                        }
                         _ => {
                             Self::handle_text_input(&mut form.config_key_input, key);
                         }
@@ -2631,6 +2638,15 @@ impl App {
                                 form.config_cursor.min(form.config.len().saturating_sub(1));
                         }
                     }
+                    KeyCode::Up => {
+                        form.config_cursor = form.config_cursor.saturating_sub(1);
+                    }
+                    KeyCode::Down => {
+                        if !form.config.is_empty() {
+                            form.config_cursor =
+                                (form.config_cursor + 1).min(form.config.len() - 1);
+                        }
+                    }
                     _ => {
                         Self::handle_text_input(&mut form.config_key_input, key);
                     }
@@ -2651,8 +2667,8 @@ impl App {
                 },
                 UpdateProviderField::Submit => {
                     if key.code == KeyCode::Enter {
-                        if form.new_value.is_empty() {
-                            form.status = Some("Value is required.".to_string());
+                        if form.config.is_empty() {
+                            form.status = Some("Config keys required.".to_string());
                             return;
                         }
                         self.pending_provider_update = true;

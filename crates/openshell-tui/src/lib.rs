@@ -1707,7 +1707,9 @@ fn spawn_update_provider(app: &App, tx: mpsc::UnboundedSender<Event>) {
 
     tokio::spawn(async move {
         let mut credentials = HashMap::new();
-        credentials.insert(cred_key, new_value);
+        if !new_value.is_empty() {
+            credentials.insert(cred_key, new_value);
+        }
 
         let req = openshell_core::proto::UpdateProviderRequest {
             provider: Some(openshell_core::proto::Provider {
