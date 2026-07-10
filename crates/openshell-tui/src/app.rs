@@ -527,6 +527,22 @@ pub enum UpdateProviderField {
 }
 
 // ---------------------------------------------------------------------------
+// Shared config helpers
+// ---------------------------------------------------------------------------
+
+fn flush_config_input(
+    config: &mut IndexMap<String, String>,
+    key_input: &mut String,
+    value_input: &mut String,
+) -> bool {
+    if !key_input.is_empty() && !value_input.is_empty() {
+        config.insert(std::mem::take(key_input), std::mem::take(value_input));
+        return true;
+    }
+    false
+}
+
+// ---------------------------------------------------------------------------
 // App state
 // ---------------------------------------------------------------------------
 
@@ -2258,13 +2274,43 @@ impl App {
                 }
                 KeyCode::Tab => {
                     if form.is_generic {
-                        // Name → EnvVarName → GenericValue → Submit → Name
-                        form.key_field = match form.key_field {
-                            ProviderKeyField::Name => ProviderKeyField::EnvVarName,
-                            ProviderKeyField::EnvVarName => ProviderKeyField::GenericValue,
-                            ProviderKeyField::GenericValue => ProviderKeyField::Submit,
-                            _ => ProviderKeyField::Name,
-                        };
+                        // Name → EnvVarName → GenericValue → ConfigKeyName → ConfigKeyValue → Submit → Name
+                        match form.key_field {
+                            ProviderKeyField::Name => {
+                                form.key_field = ProviderKeyField::EnvVarName;
+                            }
+                            ProviderKeyField::EnvVarName => {
+                                form.key_field = ProviderKeyField::GenericValue;
+                            }
+                            ProviderKeyField::GenericValue => {
+                                form.key_field = ProviderKeyField::ConfigKeyName;
+                            }
+                            ProviderKeyField::ConfigKeyName => {
+                                form.key_field = ProviderKeyField::ConfigKeyValue;
+                            }
+                            ProviderKeyField::ConfigKeyValue => {
+                                if flush_config_input(
+                                    &mut form.config,
+                                    &mut form.config_key_input,
+                                    &mut form.config_value_input,
+                                ) {
+                                    form.key_field = ProviderKeyField::ConfigKeyName;
+                                } else if form.config_key_input.is_empty()
+                                    && form.config_value_input.is_empty()
+                                {
+                                    form.key_field = ProviderKeyField::Submit;
+                                } else {
+                                    form.status = Some(
+                                        "Both key and value required to add config entry."
+                                            .to_string(),
+                                    );
+                                    form.key_field = ProviderKeyField::ConfigKeyName;
+                                }
+                            }
+                            _ => {
+                                form.key_field = ProviderKeyField::Name;
+                            }
+                        }
                     } else {
                         // Name → Credential[0..N-1] → ConfigKeyName → ConfigKeyValue → Submit → Name
                         match form.key_field {
@@ -2287,19 +2333,21 @@ impl App {
                                 form.key_field = ProviderKeyField::ConfigKeyValue;
                             }
                             ProviderKeyField::ConfigKeyValue => {
-                                if !form.config_key_input.is_empty()
-                                    && !form.config_value_input.is_empty()
-                                {
-                                    form.config.insert(
-                                        std::mem::take(&mut form.config_key_input),
-                                        std::mem::take(&mut form.config_value_input),
-                                    );
+                                if flush_config_input(
+                                    &mut form.config,
+                                    &mut form.config_key_input,
+                                    &mut form.config_value_input,
+                                ) {
                                     form.key_field = ProviderKeyField::ConfigKeyName;
                                 } else if form.config_key_input.is_empty()
                                     && form.config_value_input.is_empty()
                                 {
                                     form.key_field = ProviderKeyField::Submit;
                                 } else {
+                                    form.status = Some(
+                                        "Both key and value required to add config entry."
+                                            .to_string(),
+                                    );
                                     form.key_field = ProviderKeyField::ConfigKeyName;
                                 }
                             }
@@ -2314,7 +2362,9 @@ impl App {
                         form.key_field = match form.key_field {
                             ProviderKeyField::EnvVarName => ProviderKeyField::Name,
                             ProviderKeyField::GenericValue => ProviderKeyField::EnvVarName,
-                            ProviderKeyField::Submit => ProviderKeyField::GenericValue,
+                            ProviderKeyField::ConfigKeyName => ProviderKeyField::GenericValue,
+                            ProviderKeyField::ConfigKeyValue => ProviderKeyField::ConfigKeyName,
+                            ProviderKeyField::Submit => ProviderKeyField::ConfigKeyValue,
                             _ => ProviderKeyField::Submit,
                         };
                     } else {
@@ -2355,14 +2405,11 @@ impl App {
                     }
                     ProviderKeyField::ConfigKeyName => match key.code {
                         KeyCode::Enter => {
-                            if !form.config_key_input.is_empty()
-                                && !form.config_value_input.is_empty()
-                            {
-                                form.config.insert(
-                                    std::mem::take(&mut form.config_key_input),
-                                    std::mem::take(&mut form.config_value_input),
-                                );
-                            }
+                            flush_config_input(
+                                &mut form.config,
+                                &mut form.config_key_input,
+                                &mut form.config_value_input,
+                            );
                         }
                         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             if !form.config.is_empty() {
@@ -2392,14 +2439,11 @@ impl App {
                     },
                     ProviderKeyField::ConfigKeyValue => match key.code {
                         KeyCode::Enter => {
-                            if !form.config_key_input.is_empty()
-                                && !form.config_value_input.is_empty()
-                            {
-                                form.config.insert(
-                                    std::mem::take(&mut form.config_key_input),
-                                    std::mem::take(&mut form.config_value_input),
-                                );
-                            }
+                            flush_config_input(
+                                &mut form.config,
+                                &mut form.config_key_input,
+                                &mut form.config_value_input,
+                            );
                         }
                         _ => {
                             Self::handle_text_input(&mut form.config_value_input, key);
@@ -2580,16 +2624,18 @@ impl App {
                     form.focus = UpdateProviderField::ConfigValue;
                 }
                 UpdateProviderField::ConfigValue => {
-                    if !form.config_key_input.is_empty() && !form.config_value_input.is_empty() {
-                        form.config.insert(
-                            std::mem::take(&mut form.config_key_input),
-                            std::mem::take(&mut form.config_value_input),
-                        );
+                    if flush_config_input(
+                        &mut form.config,
+                        &mut form.config_key_input,
+                        &mut form.config_value_input,
+                    ) {
                         form.focus = UpdateProviderField::ConfigKey;
                     } else if form.config_key_input.is_empty() && form.config_value_input.is_empty()
                     {
                         form.focus = UpdateProviderField::Submit;
                     } else {
+                        form.status =
+                            Some("Both key and value required to add config entry.".to_string());
                         form.focus = UpdateProviderField::ConfigKey;
                     }
                 }
@@ -2617,13 +2663,11 @@ impl App {
                 }
                 UpdateProviderField::ConfigKey => match key.code {
                     KeyCode::Enter => {
-                        if !form.config_key_input.is_empty() && !form.config_value_input.is_empty()
-                        {
-                            form.config.insert(
-                                std::mem::take(&mut form.config_key_input),
-                                std::mem::take(&mut form.config_value_input),
-                            );
-                        }
+                        flush_config_input(
+                            &mut form.config,
+                            &mut form.config_key_input,
+                            &mut form.config_value_input,
+                        );
                     }
                     KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         if !form.config.is_empty() {
@@ -2653,13 +2697,11 @@ impl App {
                 },
                 UpdateProviderField::ConfigValue => match key.code {
                     KeyCode::Enter => {
-                        if !form.config_key_input.is_empty() && !form.config_value_input.is_empty()
-                        {
-                            form.config.insert(
-                                std::mem::take(&mut form.config_key_input),
-                                std::mem::take(&mut form.config_value_input),
-                            );
-                        }
+                        flush_config_input(
+                            &mut form.config,
+                            &mut form.config_key_input,
+                            &mut form.config_value_input,
+                        );
                     }
                     _ => {
                         Self::handle_text_input(&mut form.config_value_input, key);
@@ -2667,8 +2709,9 @@ impl App {
                 },
                 UpdateProviderField::Submit => {
                     if key.code == KeyCode::Enter {
-                        if form.config.is_empty() {
-                            form.status = Some("Config keys required.".to_string());
+                        if form.new_value.is_empty() && form.config.is_empty() {
+                            form.status =
+                                Some("Credential value or config keys required.".to_string());
                             return;
                         }
                         self.pending_provider_update = true;
@@ -3154,5 +3197,36 @@ mod tests {
         };
 
         assert_eq!(gateway.source_label(), "unknown");
+    }
+
+    #[test]
+    fn flush_config_input_inserts_when_both_present() {
+        let mut config = IndexMap::new();
+        let mut key = "FOO".to_string();
+        let mut val = "bar".to_string();
+        assert!(flush_config_input(&mut config, &mut key, &mut val));
+        assert_eq!(config.get("FOO"), Some(&"bar".to_string()));
+        assert!(key.is_empty());
+        assert!(val.is_empty());
+    }
+
+    #[test]
+    fn flush_config_input_noop_when_key_empty() {
+        let mut config = IndexMap::new();
+        let mut key = String::new();
+        let mut val = "bar".to_string();
+        assert!(!flush_config_input(&mut config, &mut key, &mut val));
+        assert!(config.is_empty());
+        assert_eq!(val, "bar");
+    }
+
+    #[test]
+    fn flush_config_input_noop_when_value_empty() {
+        let mut config = IndexMap::new();
+        let mut key = "FOO".to_string();
+        let mut val = String::new();
+        assert!(!flush_config_input(&mut config, &mut key, &mut val));
+        assert!(config.is_empty());
+        assert_eq!(key, "FOO");
     }
 }
