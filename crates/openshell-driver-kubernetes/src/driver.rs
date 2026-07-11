@@ -733,7 +733,10 @@ impl KubernetesComputeDriver {
             .await?;
         match tokio::time::timeout(
             KUBE_API_TIMEOUT,
-            agent_sandbox_api.api.list(&ListParams::default()),
+            agent_sandbox_api.api.list(
+                &ListParams::default()
+                    .labels(&format!("{LABEL_MANAGED_BY}={LABEL_MANAGED_BY_VALUE}")),
+            ),
         )
         .await
         {
@@ -974,8 +977,10 @@ impl KubernetesComputeDriver {
             .supported_agent_sandbox_api(self.watch_client.clone())
             .await?;
         let event_api: Api<KubeEventObj> = Api::namespaced(self.watch_client.clone(), &namespace);
+        let sandbox_watcher_config = watcher::Config::default()
+            .labels(&format!("{LABEL_MANAGED_BY}={LABEL_MANAGED_BY_VALUE}"));
         let mut sandbox_stream =
-            watcher::watcher(agent_sandbox_api.api, watcher::Config::default()).boxed();
+            watcher::watcher(agent_sandbox_api.api, sandbox_watcher_config).boxed();
         let mut event_stream = watcher::watcher(event_api, watcher::Config::default()).boxed();
         let (tx, rx) = mpsc::channel(256);
 
@@ -987,64 +992,52 @@ impl KubernetesComputeDriver {
                 tokio::select! {
                     result = sandbox_stream.try_next() => match result {
                         Ok(Some(Event::Applied(obj))) => {
-                            match sandbox_from_object(&namespace, obj) {
-                                Ok(sandbox) => {
-                                    update_indexes(&mut sandbox_name_to_id, &mut agent_pod_to_id, &sandbox);
-                                    let event = WatchSandboxesEvent {
-                                        payload: Some(watch_sandboxes_event::Payload::Sandbox(
-                                            WatchSandboxesSandboxEvent { sandbox: Some(sandbox) }
-                                        )),
-                                    };
-                                    if tx.send(Ok(event)).await.is_err() {
-                                        break;
-                                    }
-                                }
-                                Err(err) => {
-                                    if tx.send(Err(KubernetesDriverError::Message(err))).await.is_err() {
-                                        break;
-                                    }
-                                }
+                            let obj_name = obj.metadata.name.clone().unwrap_or_default();
+                            let Ok(sandbox) = sandbox_from_object(&namespace, obj) else {
+                                debug!(object_name = %obj_name, "skipping non-gateway Sandbox in Applied event");
+                                continue;
+                            };
+                            update_indexes(&mut sandbox_name_to_id, &mut agent_pod_to_id, &sandbox);
+                            let event = WatchSandboxesEvent {
+                                payload: Some(watch_sandboxes_event::Payload::Sandbox(
+                                    WatchSandboxesSandboxEvent { sandbox: Some(sandbox) }
+                                )),
+                            };
+                            if tx.send(Ok(event)).await.is_err() {
+                                break;
                             }
                         }
                         Ok(Some(Event::Deleted(obj))) => {
-                            match sandbox_id_from_object(&obj) {
-                                Ok(sandbox_id) => {
-                                    remove_indexes(&mut sandbox_name_to_id, &mut agent_pod_to_id, &sandbox_id);
-                                    let event = WatchSandboxesEvent {
-                                        payload: Some(watch_sandboxes_event::Payload::Deleted(
-                                            WatchSandboxesDeletedEvent { sandbox_id }
-                                        )),
-                                    };
-                                    if tx.send(Ok(event)).await.is_err() {
-                                        break;
-                                    }
-                                }
-                                Err(err) => {
-                                    if tx.send(Err(KubernetesDriverError::Message(err))).await.is_err() {
-                                        break;
-                                    }
-                                }
+                            let obj_name = obj.metadata.name.clone().unwrap_or_default();
+                            let Ok(sandbox_id) = sandbox_id_from_object(&obj) else {
+                                debug!(object_name = %obj_name, "skipping non-gateway Sandbox in Deleted event");
+                                continue;
+                            };
+                            remove_indexes(&mut sandbox_name_to_id, &mut agent_pod_to_id, &sandbox_id);
+                            let event = WatchSandboxesEvent {
+                                payload: Some(watch_sandboxes_event::Payload::Deleted(
+                                    WatchSandboxesDeletedEvent { sandbox_id }
+                                )),
+                            };
+                            if tx.send(Ok(event)).await.is_err() {
+                                break;
                             }
                         }
                         Ok(Some(Event::Restarted(objs))) => {
                             for obj in objs {
-                                match sandbox_from_object(&namespace, obj) {
-                                    Ok(sandbox) => {
-                                        update_indexes(&mut sandbox_name_to_id, &mut agent_pod_to_id, &sandbox);
-                                        let event = WatchSandboxesEvent {
-                                            payload: Some(watch_sandboxes_event::Payload::Sandbox(
-                                                WatchSandboxesSandboxEvent { sandbox: Some(sandbox) }
-                                            )),
-                                        };
-                                        if tx.send(Ok(event)).await.is_err() {
-                                            return;
-                                        }
-                                    }
-                                    Err(err) => {
-                                        if tx.send(Err(KubernetesDriverError::Message(err))).await.is_err() {
-                                            return;
-                                        }
-                                    }
+                                let obj_name = obj.metadata.name.clone().unwrap_or_default();
+                                let Ok(sandbox) = sandbox_from_object(&namespace, obj) else {
+                                    debug!(object_name = %obj_name, "skipping non-gateway Sandbox in Restarted event");
+                                    continue;
+                                };
+                                update_indexes(&mut sandbox_name_to_id, &mut agent_pod_to_id, &sandbox);
+                                let event = WatchSandboxesEvent {
+                                    payload: Some(watch_sandboxes_event::Payload::Sandbox(
+                                        WatchSandboxesSandboxEvent { sandbox: Some(sandbox) }
+                                    )),
+                                };
+                                if tx.send(Ok(event)).await.is_err() {
+                                    return;
                                 }
                             }
                         }
@@ -5616,5 +5609,73 @@ mod tests {
         assert!(validate_kubernetes_dns1123_label("my_sandbox", "sandbox name").is_err());
         assert!(validate_kubernetes_dns1123_label("MySandbox", "sandbox name").is_err());
         assert!(validate_kubernetes_dns1123_label("dotted.name", "sandbox name").is_err());
+    }
+
+    fn make_dynamic_object(name: &str, labels: Option<BTreeMap<String, String>>) -> DynamicObject {
+        DynamicObject {
+            metadata: ObjectMeta {
+                name: Some(name.to_string()),
+                namespace: Some("test-ns".to_string()),
+                labels,
+                ..Default::default()
+            },
+            types: None,
+            data: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn test_sandbox_id_from_object_with_label() {
+        let mut labels = BTreeMap::new();
+        labels.insert(LABEL_SANDBOX_ID.to_string(), "my-sandbox-id".to_string());
+        let obj = make_dynamic_object("sandbox-obj", Some(labels));
+        let result = sandbox_id_from_object(&obj);
+        assert_eq!(result, Ok("my-sandbox-id".to_string()));
+    }
+
+    #[test]
+    fn test_sandbox_id_from_object_with_name_prefix() {
+        let obj = make_dynamic_object("sandbox-abc123", None);
+        let result = sandbox_id_from_object(&obj);
+        assert_eq!(result, Ok("abc123".to_string()));
+    }
+
+    #[test]
+    fn test_sandbox_id_from_object_unknown() {
+        let obj = make_dynamic_object("openshell-warm-pool-xyz", None);
+        let result = sandbox_id_from_object(&obj);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sandbox_id_from_object_managed_by_but_no_sandbox_id() {
+        let mut labels = BTreeMap::new();
+        labels.insert(
+            LABEL_MANAGED_BY.to_string(),
+            LABEL_MANAGED_BY_VALUE.to_string(),
+        );
+        let obj = make_dynamic_object("openshell-warm-pool-xyz", Some(labels));
+        let result = sandbox_id_from_object(&obj);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sandbox_from_object_success() {
+        let mut labels = BTreeMap::new();
+        labels.insert(LABEL_SANDBOX_ID.to_string(), "test-id".to_string());
+        let obj = make_dynamic_object("sandbox-test-id", Some(labels));
+        let result = sandbox_from_object("test-ns", obj);
+        assert!(result.is_ok());
+        let sandbox = result.unwrap();
+        assert_eq!(sandbox.id, "test-id");
+        assert_eq!(sandbox.name, "sandbox-test-id");
+        assert_eq!(sandbox.namespace, "test-ns");
+    }
+
+    #[test]
+    fn test_sandbox_from_object_unknown() {
+        let obj = make_dynamic_object("openshell-warm-pool-abc", None);
+        let result = sandbox_from_object("test-ns", obj);
+        assert!(result.is_err());
     }
 }
