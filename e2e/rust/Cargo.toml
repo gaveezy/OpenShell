@@ -103,6 +103,11 @@ path = "tests/forward_proxy_jsonrpc_l7.rs"
 required-features = ["e2e-host-gateway"]
 
 [[test]]
+name = "proxy_egress_pipeline"
+path = "tests/proxy_egress_pipeline.rs"
+required-features = ["e2e-host-gateway"]
+
+[[test]]
 name = "gpu"
 path = "tests/gpu.rs"
 required-features = ["e2e-gpu"]
