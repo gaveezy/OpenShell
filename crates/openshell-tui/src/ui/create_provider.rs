@@ -993,6 +993,11 @@ fn render_config_entries(
     };
     let take_count = MAX_VISIBLE_CONFIG.min(total.saturating_sub(scroll_offset));
     let overflow_below = scroll_offset + take_count < total;
+    let take_count = if overflow_below {
+        take_count.saturating_sub(1_usize)
+    } else {
+        take_count
+    };
 
     let mut config_lines: Vec<Line<'_>> = config
         .iter()

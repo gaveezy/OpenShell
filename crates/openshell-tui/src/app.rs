@@ -2441,11 +2441,13 @@ impl App {
                     },
                     ProviderKeyField::ConfigKeyValue => match key.code {
                         KeyCode::Enter => {
-                            flush_config_input(
+                            if flush_config_input(
                                 &mut form.config,
                                 &mut form.config_key_input,
                                 &mut form.config_value_input,
-                            );
+                            ) {
+                                form.key_field = ProviderKeyField::ConfigKeyName;
+                            }
                         }
                         _ => {
                             Self::handle_text_input(&mut form.config_value_input, key);
@@ -2459,6 +2461,11 @@ impl App {
                     }
                     ProviderKeyField::Submit => {
                         if key.code == KeyCode::Enter {
+                            flush_config_input(
+                                &mut form.config,
+                                &mut form.config_key_input,
+                                &mut form.config_value_input,
+                            );
                             // Validate and build credentials map.
                             let mut creds = HashMap::new();
                             if form.is_generic {
@@ -2702,11 +2709,13 @@ impl App {
                 },
                 UpdateProviderField::ConfigValue => match key.code {
                     KeyCode::Enter => {
-                        flush_config_input(
+                        if flush_config_input(
                             &mut form.config,
                             &mut form.config_key_input,
                             &mut form.config_value_input,
-                        );
+                        ) {
+                            form.focus = UpdateProviderField::ConfigKey;
+                        }
                     }
                     _ => {
                         Self::handle_text_input(&mut form.config_value_input, key);
@@ -3360,6 +3369,47 @@ mod tests {
         assert!(
             !delta.contains_key("A"),
             "unchanged key must not be in delta"
+        );
+    }
+
+    #[test]
+    fn deleted_key_tombstoned_readded_key_not_tombstoned() {
+        let original_config: IndexMap<String, String> = IndexMap::from([
+            ("DEL".to_string(), "old".to_string()),
+            ("READD".to_string(), "orig".to_string()),
+            ("KEEP".to_string(), "keep".to_string()),
+        ]);
+        // DEL was removed, READD was deleted then re-added with new value, KEEP unchanged.
+        let config: IndexMap<String, String> = IndexMap::from([
+            ("READD".to_string(), "new".to_string()),
+            ("KEEP".to_string(), "keep".to_string()),
+        ]);
+
+        let mut request = config
+            .iter()
+            .filter(|(k, v)| original_config.get(*k) != Some(*v))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<HashMap<String, String>>();
+        original_config
+            .keys()
+            .filter(|k| !config.contains_key(*k))
+            .for_each(|key| {
+                request.insert(key.clone(), String::new());
+            });
+
+        assert_eq!(
+            request.get("DEL"),
+            Some(&String::new()),
+            "DEL must be tombstoned"
+        );
+        assert_eq!(
+            request.get("READD"),
+            Some(&"new".to_string()),
+            "READD must have new value, not tombstone"
+        );
+        assert!(
+            !request.contains_key("KEEP"),
+            "KEEP unchanged must not be in delta"
         );
     }
 }

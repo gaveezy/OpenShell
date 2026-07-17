@@ -1705,9 +1705,12 @@ fn spawn_update_provider(app: &App, tx: mpsc::UnboundedSender<Event>) {
         .filter(|(k, v)| form.original_config.get(*k) != Some(*v))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    form.deleted_keys.iter().for_each(|key| {
-        config.insert(key.clone(), String::new());
-    });
+    form.original_config
+        .keys()
+        .filter(|k| !form.config.contains_key(*k))
+        .for_each(|key| {
+            config.insert(key.clone(), String::new());
+        });
 
     tokio::spawn(async move {
         let mut credentials = HashMap::new();
@@ -1970,18 +1973,14 @@ async fn refresh_providers(app: &mut App) {
         Ok(Ok(resp)) => {
             let providers = resp.into_inner().providers;
             app.provider_count = providers.len();
-            app.provider_entries = if app.providers_v2_enabled {
-                providers
-                    .iter()
-                    .cloned()
-                    .map(|provider| app::ProviderV2Entry {
-                        profile: profiles.get(&provider.r#type).cloned(),
-                        provider,
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
+            app.provider_entries = providers
+                .iter()
+                .cloned()
+                .map(|provider| app::ProviderV2Entry {
+                    profile: profiles.get(&provider.r#type).cloned(),
+                    provider,
+                })
+                .collect();
             app.provider_names = providers
                 .iter()
                 .map(|p| app::provider_name(p).to_string())
