@@ -1699,11 +1699,14 @@ fn spawn_update_provider(app: &App, tx: mpsc::UnboundedSender<Event>) {
     let ptype = form.provider_type.clone();
     let cred_key = form.credential_key.clone();
     let new_value = form.new_value.clone();
-    let config: HashMap<String, String> = form
+    let mut config: HashMap<String, String> = form
         .config
         .iter()
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
+    form.deleted_keys.iter().for_each(|key| {
+        config.insert(key.clone(), String::new());
+    });
 
     tokio::spawn(async move {
         let mut credentials = HashMap::new();

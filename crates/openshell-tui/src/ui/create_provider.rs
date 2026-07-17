@@ -983,31 +983,47 @@ fn render_config_entries(
     area: Rect,
     theme: &crate::theme::Theme,
 ) {
-    let t = theme;
-    let overflow = config.len() > MAX_VISIBLE_CONFIG;
-    let take_count = if overflow {
-        MAX_VISIBLE_CONFIG - 1
+    let total = config.len();
+    let scroll_offset = if total > MAX_VISIBLE_CONFIG {
+        config_cursor
+            .saturating_sub(MAX_VISIBLE_CONFIG - 2_usize)
+            .min(total.saturating_sub(MAX_VISIBLE_CONFIG))
     } else {
-        MAX_VISIBLE_CONFIG
+        0_usize
     };
+    let take_count = MAX_VISIBLE_CONFIG.min(total.saturating_sub(scroll_offset));
+    let overflow_below = scroll_offset + take_count < total;
+
     let mut config_lines: Vec<Line<'_>> = config
         .iter()
         .enumerate()
+        .skip(scroll_offset)
         .take(take_count)
         .map(|(i, (key, value))| {
             let is_selected = config_focused && i == config_cursor;
-            let style = if is_selected { t.accent_bold } else { t.text };
+            let style = if is_selected {
+                theme.accent_bold
+            } else {
+                theme.text
+            };
             Line::from(vec![
                 Span::styled(format!("  {key}="), style),
-                Span::styled(value.as_str(), if is_selected { t.accent } else { t.muted }),
+                Span::styled(
+                    value.as_str(),
+                    if is_selected {
+                        theme.accent
+                    } else {
+                        theme.muted
+                    },
+                ),
             ])
         })
         .collect();
-    if overflow {
-        let remaining = config.len() - take_count;
+    if overflow_below {
+        let remaining = total - scroll_offset - take_count;
         config_lines.push(Line::from(Span::styled(
             format!("  \u{2026}and {remaining} more"),
-            t.muted,
+            theme.muted,
         )));
     }
     frame.render_widget(Paragraph::new(config_lines), area);
