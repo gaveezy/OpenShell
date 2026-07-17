@@ -1702,6 +1702,7 @@ fn spawn_update_provider(app: &App, tx: mpsc::UnboundedSender<Event>) {
     let mut config: HashMap<String, String> = form
         .config
         .iter()
+        .filter(|(k, v)| form.original_config.get(*k) != Some(*v))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     form.deleted_keys.iter().for_each(|key| {

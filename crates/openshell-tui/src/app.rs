@@ -511,6 +511,7 @@ pub struct UpdateProviderForm {
     pub credential_key: String,
     pub new_value: String,
     pub config: IndexMap<String, String>,
+    pub original_config: IndexMap<String, String>,
     pub config_key_input: String,
     pub config_value_input: String,
     pub config_cursor: usize,
@@ -2599,7 +2600,8 @@ impl App {
             provider_type: ptype,
             credential_key: key,
             new_value: String::new(),
-            config: existing_config,
+            config: existing_config.clone(),
+            original_config: existing_config,
             config_key_input: String::new(),
             config_value_input: String::new(),
             config_cursor: 0,
@@ -3240,12 +3242,15 @@ mod tests {
 
     #[test]
     fn delete_config_entry_records_tombstone() {
+        let config = IndexMap::from([("FOO".into(), "1".into()), ("BAR".into(), "2".into())]);
+
         let mut form = UpdateProviderForm {
             provider_name: "p".into(),
             provider_type: "t".into(),
             credential_key: "k".into(),
             new_value: String::new(),
-            config: IndexMap::from([("FOO".into(), "1".into()), ("BAR".into(), "2".into())]),
+            original_config: config.clone(),
+            config,
             config_key_input: String::new(),
             config_value_input: String::new(),
             config_cursor: 0,
@@ -3270,6 +3275,7 @@ mod tests {
             credential_key: "k".into(),
             new_value: String::new(),
             config: IndexMap::new(),
+            original_config: IndexMap::from([("FOO".into(), "1".into())]),
             config_key_input: String::new(),
             config_value_input: String::new(),
             config_cursor: 0,
