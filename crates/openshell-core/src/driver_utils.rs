@@ -223,8 +223,13 @@ fn authority_has_explicit_port(raw: &str) -> bool {
                 .rsplit_once(':')
                 .is_some_and(|(_, port)| !port.is_empty())
         },
-        // Bracketed IPv6 literal: a port can only follow the bracket.
-        |end| host_port[end + 1..].starts_with(':'),
+        // Bracketed IPv6 literal: a port can only follow the bracket, and a
+        // bare trailing `]:` is no more explicit than no port at all.
+        |end| {
+            host_port[end + 1..]
+                .strip_prefix(':')
+                .is_some_and(|port| !port.is_empty())
+        },
     )
 }
 
@@ -404,6 +409,7 @@ mod tests {
             "http://proxy.corp.com/",
             "http://proxy.corp.com:",
             "http://[fd00::1]",
+            "http://[fd00::1]:",
         ] {
             assert_eq!(
                 parse_upstream_proxy_url(url),
