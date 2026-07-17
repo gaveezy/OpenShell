@@ -2714,6 +2714,11 @@ impl App {
                 },
                 UpdateProviderField::Submit => {
                     if key.code == KeyCode::Enter {
+                        flush_config_input(
+                            &mut form.config,
+                            &mut form.config_key_input,
+                            &mut form.config_value_input,
+                        );
                         if form.new_value.is_empty()
                             && form.config.is_empty()
                             && form.deleted_keys.is_empty()
@@ -3317,5 +3322,44 @@ mod tests {
         };
         assert_eq!(offset, 4);
         assert!(cursor >= offset && cursor < offset + window);
+    }
+
+    // -- pending input flush on submit ---------------------------------
+
+    #[test]
+    fn pending_config_input_flushed_on_submit() {
+        let mut config = IndexMap::new();
+        let mut key_input = "MY_KEY".to_string();
+        let mut val_input = "my_val".to_string();
+        flush_config_input(&mut config, &mut key_input, &mut val_input);
+        assert_eq!(config.get("MY_KEY"), Some(&"my_val".to_string()));
+        assert!(key_input.is_empty());
+        assert!(val_input.is_empty());
+    }
+
+    // -- delta-only update request -------------------------------------
+
+    #[test]
+    fn update_request_contains_only_config_delta() {
+        let original_config: IndexMap<String, String> = IndexMap::from([
+            ("A".to_string(), "1".to_string()),
+            ("B".to_string(), "2".to_string()),
+        ]);
+        let config: IndexMap<String, String> = IndexMap::from([
+            ("A".to_string(), "1".to_string()),
+            ("B".to_string(), "changed".to_string()),
+        ]);
+
+        let delta: HashMap<String, String> = config
+            .iter()
+            .filter(|(k, v)| original_config.get(*k) != Some(*v))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        assert!(delta.contains_key("B"), "changed key must be in delta");
+        assert!(
+            !delta.contains_key("A"),
+            "unchanged key must not be in delta"
+        );
     }
 }
