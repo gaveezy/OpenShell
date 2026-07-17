@@ -86,6 +86,7 @@ pub async fn run_networking(
     inference_routes: Option<&str>,
     denial_tx: Option<UnboundedSender<DenialEvent>>,
     activity_tx: Option<ActivitySender>,
+    upstream_proxy_args: &crate::upstream_proxy::UpstreamProxyArgs,
 ) -> Result<Networking> {
     // Build the policy-local route context. The orchestrator's policy poll
     // loop also holds an `Arc` clone (via `Networking::policy_local_ctx`) so
@@ -309,6 +310,7 @@ pub async fn run_networking(
             denial_tx,
             activity_tx,
             engine_ready_rx,
+            upstream_proxy_args,
         )
         .await?;
         Some(proxy_handle)
