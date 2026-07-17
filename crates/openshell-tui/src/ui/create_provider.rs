@@ -384,11 +384,13 @@ fn draw_enter_key(
     idx += 1;
 
     // Config Keys label.
-    let config_focused = matches!(
+    let config_section_focused = matches!(
         form.key_field,
-        ProviderKeyField::ConfigKeyName | ProviderKeyField::ConfigKeyValue
+        ProviderKeyField::ConfigList
+            | ProviderKeyField::ConfigKeyName
+            | ProviderKeyField::ConfigKeyValue
     );
-    let header_style = if config_focused {
+    let header_style = if config_section_focused {
         t.accent_bold
     } else {
         t.muted
@@ -401,11 +403,12 @@ fn draw_enter_key(
 
     // Existing config entries.
     if !form.config.is_empty() {
+        let config_entry_active = form.key_field == ProviderKeyField::ConfigList;
         render_config_entries(
             frame,
             &form.config,
             form.config_cursor,
-            config_focused,
+            config_entry_active,
             chunks[idx],
             t,
         );
@@ -839,11 +842,13 @@ pub fn draw_update(frame: &mut Frame<'_>, app: &App, area: Rect) {
     idx += 1;
 
     // Config Keys label.
-    let config_focused = matches!(
+    let config_section_focused = matches!(
         form.focus,
-        UpdateProviderField::ConfigKey | UpdateProviderField::ConfigValue
+        UpdateProviderField::ConfigEntry
+            | UpdateProviderField::ConfigKey
+            | UpdateProviderField::ConfigValue
     );
-    let header_style = if config_focused {
+    let header_style = if config_section_focused {
         t.accent_bold
     } else {
         t.muted
@@ -856,11 +861,12 @@ pub fn draw_update(frame: &mut Frame<'_>, app: &App, area: Rect) {
 
     // Existing config entries.
     if !form.config.is_empty() {
+        let config_entry_active = form.focus == UpdateProviderField::ConfigEntry;
         render_config_entries(
             frame,
             &form.config,
             form.config_cursor,
-            config_focused,
+            config_entry_active,
             chunks[idx],
             t,
         );
