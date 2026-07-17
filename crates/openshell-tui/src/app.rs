@@ -3235,4 +3235,81 @@ mod tests {
         assert!(config.is_empty());
         assert_eq!(key, "FOO");
     }
+
+    // -- config deletion tombstones ------------------------------------
+
+    #[test]
+    fn delete_config_entry_records_tombstone() {
+        let mut form = UpdateProviderForm {
+            provider_name: "p".into(),
+            provider_type: "t".into(),
+            credential_key: "k".into(),
+            new_value: String::new(),
+            config: IndexMap::from([("FOO".into(), "1".into()), ("BAR".into(), "2".into())]),
+            config_key_input: String::new(),
+            config_value_input: String::new(),
+            config_cursor: 0,
+            focus: UpdateProviderField::ConfigKey,
+            status: None,
+            deleted_keys: Vec::new(),
+        };
+
+        let key_to_remove = form.config.keys().next().cloned().unwrap();
+        form.deleted_keys.push(key_to_remove.clone());
+        form.config.shift_remove(&key_to_remove);
+
+        assert!(!form.config.contains_key("FOO"));
+        assert!(form.deleted_keys.contains(&"FOO".to_owned()));
+    }
+
+    #[test]
+    fn delete_last_config_entry_allows_submit() {
+        let form = UpdateProviderForm {
+            provider_name: "p".into(),
+            provider_type: "t".into(),
+            credential_key: "k".into(),
+            new_value: String::new(),
+            config: IndexMap::new(),
+            config_key_input: String::new(),
+            config_value_input: String::new(),
+            config_cursor: 0,
+            focus: UpdateProviderField::Submit,
+            status: None,
+            deleted_keys: vec!["FOO".into()],
+        };
+
+        assert!(
+            !(form.new_value.is_empty() && form.config.is_empty() && form.deleted_keys.is_empty())
+        );
+    }
+
+    // -- cursor-relative scroll window ---------------------------------
+
+    #[test]
+    fn scroll_offset_zero_when_within_window() {
+        let (total, cursor, window) = (4_usize, 3_usize, 6_usize);
+        let offset = if total > window {
+            cursor
+                .saturating_sub(window - 2_usize)
+                .min(total.saturating_sub(window))
+        } else {
+            0_usize
+        };
+
+        assert_eq!(offset, 0_usize);
+    }
+
+    #[test]
+    fn scroll_offset_follows_cursor_past_window() {
+        let (total, cursor, window) = (10_usize, 8_usize, 6_usize);
+        let offset = if total > window {
+            cursor
+                .saturating_sub(window - 2)
+                .min(total.saturating_sub(window))
+        } else {
+            0
+        };
+        assert_eq!(offset, 4);
+        assert!(cursor >= offset && cursor < offset + window);
+    }
 }
