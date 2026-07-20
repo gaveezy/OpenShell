@@ -738,6 +738,8 @@ pub struct SettingsPollResult {
     pub global_policy_version: u32,
     pub provider_env_revision: u64,
     pub supervisor_middleware_services: Vec<crate::proto::SupervisorMiddlewareService>,
+    /// Gateway-configured posture for rejected policy generations.
+    pub policy_validation_failure_mode: crate::PolicyValidationFailureMode,
 }
 
 fn settings_poll_result(inner: crate::proto::GetSandboxConfigResponse) -> SettingsPollResult {
@@ -752,6 +754,41 @@ fn settings_poll_result(inner: crate::proto::GetSandboxConfigResponse) -> Settin
         global_policy_version: inner.global_policy_version,
         provider_env_revision: inner.provider_env_revision,
         supervisor_middleware_services: inner.supervisor_middleware_services,
+        policy_validation_failure_mode: inner
+            .policy_validation_failure_mode
+            .parse()
+            .unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod settings_poll_tests {
+    use super::settings_poll_result;
+    use crate::PolicyValidationFailureMode;
+    use crate::proto::GetSandboxConfigResponse;
+
+    #[test]
+    fn validation_failure_mode_round_trips_from_gateway_config() {
+        let result = settings_poll_result(GetSandboxConfigResponse {
+            policy_validation_failure_mode: "retain_last_valid".to_string(),
+            ..Default::default()
+        });
+        assert_eq!(
+            result.policy_validation_failure_mode,
+            PolicyValidationFailureMode::RetainLastValid
+        );
+    }
+
+    #[test]
+    fn unknown_validation_failure_mode_fails_closed() {
+        let result = settings_poll_result(GetSandboxConfigResponse {
+            policy_validation_failure_mode: "future_mode".to_string(),
+            ..Default::default()
+        });
+        assert_eq!(
+            result.policy_validation_failure_mode,
+            PolicyValidationFailureMode::FailClosed
+        );
     }
 }
 
